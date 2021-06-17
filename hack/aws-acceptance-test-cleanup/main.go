@@ -43,7 +43,7 @@ func main() {
 	}()
 
 	if err := realMain(ctx); err != nil {
-		fmt.Fprint(os.Stderr, err.Error()+"\n")
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
 		os.Exit(1)
 	}
 }
@@ -234,6 +234,9 @@ func realMain(ctx context.Context) error {
 // destroyBackoff runs destroyF in a backoff loop. It logs each loop.
 func destroyBackoff(ctx context.Context, resourceKind string, resourceID string, destroyF func() error) error {
 	start := time.Now()
+	expoBackoff := backoff.NewExponentialBackOff()
+	expoBackoff.MaxElapsedTime = 1 * time.Hour
+
 	return backoff.Retry(func() error {
 		err := destroyF()
 		if err != nil {
@@ -244,7 +247,7 @@ func destroyBackoff(ctx context.Context, resourceKind string, resourceID string,
 			fmt.Printf("%s: Still destroying... [id=%s,%s %s elapsed]\n", resourceKind, resourceID, errLog, time.Since(start).Round(time.Second))
 		}
 		return err
-	}, backoff.WithContext(backoff.NewExponentialBackOff(), ctx))
+	}, backoff.WithContext(expoBackoff, ctx))
 }
 
 // hasTag returns true if tagKey is a key in tags.
