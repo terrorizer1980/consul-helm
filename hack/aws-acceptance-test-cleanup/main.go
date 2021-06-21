@@ -235,7 +235,8 @@ func realMain(ctx context.Context) error {
 func destroyBackoff(ctx context.Context, resourceKind string, resourceID string, destroyF func() error) error {
 	start := time.Now()
 	expoBackoff := backoff.NewExponentialBackOff()
-	expoBackoff.MaxElapsedTime = 1 * time.Hour
+	// NAT gateways take forever to destroy.
+	expoBackoff.MaxElapsedTime = 1*time.Hour + 30*time.Minute
 
 	return backoff.Retry(func() error {
 		err := destroyF()
