@@ -31,6 +31,7 @@ var (
 
 func main() {
 	flag.BoolVar(&flagAutoApprove, "auto-approve", false, "Skip interactive approval before destroying.")
+	flag.Parse()
 
 	termChan := make(chan os.Signal)
 	signal.Notify(termChan, syscall.SIGINT, syscall.SIGTERM)
@@ -84,16 +85,44 @@ func realMain(ctx context.Context) error {
 	for _, c := range toDeleteClusters {
 		clusterPrint += fmt.Sprintf("- %s (%s)\n", *c.Name, *c.Tags["build_url"])
 	}
+	if len(toDeleteClusters) == 0 {
+		fmt.Println("No EKS clusters to clean up")
+		return nil
+	}
 	fmt.Printf("Found EKS clusters:\n%s", clusterPrint)
 
 	// Check for approval.
 	if !flagAutoApprove {
-		reader := bufio.NewReader(os.Stdin)
-		fmt.Println("\nDo you want to delete these clusters and associated resources including VPCs (y/n)?")
-		input, _ := reader.ReadString('\n')
-		inputTrimmed := strings.TrimSpace(input)
-		if inputTrimmed != "y" && inputTrimmed != "yes" {
-			return errors.New("exiting after negative")
+		type input struct {
+			text string
+			err  error
+		}
+		inputCh := make(chan input)
+
+		// Read input in a goroutine so we can also exit if we get a Ctrl-C
+		// (see select{} below).
+		go func() {
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Println("\nDo you want to delete these clusters and associated resources including VPCs (y/n)?")
+			inputStr, err := reader.ReadString('\n')
+			if err != nil {
+				inputCh <- input{err: err}
+				return
+			}
+			inputCh <- input{text: inputStr}
+		}()
+
+		select {
+		case in := <-inputCh:
+			if in.err != nil {
+				return in.err
+			}
+			inputTrimmed := strings.TrimSpace(in.text)
+			if inputTrimmed != "y" && inputTrimmed != "yes" {
+				return errors.New("exiting after negative")
+			}
+		case <-ctx.Done():
+			return errors.New("context cancelled")
 		}
 	}
 
